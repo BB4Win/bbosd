@@ -41,6 +41,8 @@ public:
 		UnregisterClass("osd_window", m_hInstance);
 		if(m_hFont)
 			DeleteObject(m_hFont);
+		if (m_strText)
+			delete[] m_strText;
 	}
 
 	BOOL Initialize(HINSTANCE hInstance)
@@ -116,6 +118,8 @@ public:
 		int x = COsd::edgePadding;
 		int y = COsd::edgePadding;
 
+// Get lots of warnings for REAL -> int conversions..
+#pragma warning(disable: 4244)
 		if (IsInString(COsd::sPosition, "middle"))
 			y = (GetSystemMetrics(SM_CYSCREEN) / 2) - (boundingRect.Height / 2);
 		else if (IsInString(COsd::sPosition, "bottom"))
@@ -127,6 +131,9 @@ public:
 			x = GetSystemMetrics(SM_CXSCREEN) - boundingRect.Width - COsd::edgePadding;
 
 		SetWindowPos(m_hWnd, NULL, x, y, boundingRect.Width, boundingRect.Height, SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
+		InvalidateRect(m_hWnd, NULL, TRUE);
+#pragma warning(default: 4244)
+
 		DeleteDC(hDC);
 	}
 
@@ -164,7 +171,11 @@ public:
 			int toks = BBTokenize(broam, tokens, 2, timeout);
 
 			ShowOSD(osd, atoi(timeout));
+			delete[] drop;
+			delete[] osd;
+			delete[] timeout;
 		}
+		delete[] broam;
 	}
 
 private:
@@ -241,20 +252,20 @@ private:
 		//
 		rc.left -= 1;
 		rc.top -= 1;
-		DrawText(hDC, m_strText, lstrlen(m_strText), &rc, DT_LEFT);
+		DrawText(hDC, m_strText, length, &rc, DT_LEFT);
 		rc.left += 2;
 		rc.top += 2;
-		DrawText(hDC, m_strText, lstrlen(m_strText), &rc, DT_LEFT);
+		DrawText(hDC, m_strText, length, &rc, DT_LEFT);
 		rc.left -= 2;
-		DrawText(hDC, m_strText, lstrlen(m_strText), &rc, DT_LEFT);
+		DrawText(hDC, m_strText, length, &rc, DT_LEFT);
 		rc.left += 2;
 		rc.top -= 2;
-		DrawText(hDC, m_strText, lstrlen(m_strText), &rc, DT_LEFT);
+		DrawText(hDC, m_strText, length, &rc, DT_LEFT);
 		//
 		rc.left -= 1;
 		rc.top += 1;
 		SetTextColor(hDC, clrOSD);
-		DrawText(hDC, m_strText, lstrlen(m_strText), &rc, DT_LEFT);
+		DrawText(hDC, m_strText, length, &rc, DT_LEFT);
 
 		EndPaint(m_hWnd, &ps);
 	}
@@ -263,7 +274,7 @@ private:
 	HWND			m_hWnd;
 	HFONT			m_hFont;
 	char*			m_strText;
-	HINSTANCE m_hInstance;
+	HINSTANCE		m_hInstance;
 };
 
 COLORREF COsd::clrOutline=0x010101;
@@ -306,11 +317,11 @@ void LoadConfig()
 
 
 
-const char szVersion     [] = "bbOSD 1.4.2";
+const char szVersion     [] = "bbOSD 1.4.4";
 const char szAppName     [] = "bbOSD";
-const char szInfoVersion [] = "1.4.2";
+const char szInfoVersion [] = "1.4.4";
 const char szInfoAuthor  [] = "alex3d/Tres`ni";
-const char szInfoRelDate [] = "12 Apr 2007";
+const char szInfoRelDate [] = "13 Apr 2007";
 const char szInfoEmail   [] = "AlexThreeD@users.sourceforge.net/tresni@crackmonkey.us";
 
 //===========================================================================
