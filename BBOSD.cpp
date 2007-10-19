@@ -2,8 +2,11 @@
   Copyright © 2005 Alex3D
 */
 #include "BBApi.h"
+#include <gdiplus.h>
 //#include "m_alloc.h"
 
+//===========================================================================
+void LoadConfig();
 
 //===========================================================================
 HWND BBhwnd;
@@ -20,21 +23,26 @@ class COsd
 public:
 	static COLORREF clrOutline;
 	static COLORREF clrOSD;
+	static DWORD	edgePadding;
 	static DWORD    fontSize;
 	static DWORD    timeout;
 	static bool     bShowLabel;
+	static ULONG_PTR ulGdiplusToken;
+	static char		sPosition[MAX_LINE_LENGTH];
 
 	COsd() {
 		m_hFont = NULL;
 		m_hWnd = NULL;
-		m_strText[0] = 0;
+		m_strText = NULL;
 	}
+
 	~COsd() {
 		DestroyWindow(m_hWnd);
 		UnregisterClass("osd_window", m_hInstance);
 		if(m_hFont)
 			DeleteObject(m_hFont);
 	}
+
 	BOOL Initialize(HINSTANCE hInstance)
 	{
 		m_hInstance = hInstance;
@@ -70,6 +78,7 @@ public:
 			0, 0, 800, nHeight+30, 
 			hWndDesktop, NULL, 
 			hInstance, this);
+
 		if (pSetLayeredWindowAttributes)
 				pSetLayeredWindowAttributes(m_hWnd, 0, 0, LWA_COLORKEY);
 
@@ -78,12 +87,63 @@ public:
 
 		return TRUE;
 	}
-	
+
+/*********************************************************************
+* PositionWindow                                                     *
+*                                                                    *
+* Determines nessacary height/width of client window.  Resizes and   *
+* positions window accordingly prior to drawing.                     *
+* Uses GDI+ as it's the only way I found to do this crap :P          *
+*********************************************************************/
+	void PositionWindow()
+	{
+		HDC hDC = CreateCompatibleDC(NULL);
+		Gdiplus::Graphics g(hDC);
+		Gdiplus::RectF boundingRect;
+		Gdiplus::RectF layoutRect;
+		Gdiplus::Font font(hDC, m_hFont);
+		int length = lstrlen(m_strText);
+
+		WCHAR *wstring = new WCHAR[length + 1];
+
+		Gdiplus::REAL size = font.GetHeight(&g);
+
+		MultiByteToWideChar(CP_ACP, 0, m_strText, -1, wstring, length + 1);
+
+		g.MeasureString(wstring, length, &font, layoutRect, &boundingRect);
+		delete[] wstring;
+
+		int x = COsd::edgePadding;
+		int y = COsd::edgePadding;
+
+		if (IsInString(COsd::sPosition, "middle"))
+			y = (GetSystemMetrics(SM_CYSCREEN) / 2) - (boundingRect.Height / 2);
+		else if (IsInString(COsd::sPosition, "bottom"))
+			y = GetSystemMetrics(SM_CYSCREEN) - boundingRect.Height - COsd::edgePadding;
+
+		if (IsInString(COsd::sPosition, "center"))
+			x = (GetSystemMetrics(SM_CXSCREEN) / 2) - (boundingRect.Width / 2);
+		else if (IsInString(COsd::sPosition, "right"))
+			x = GetSystemMetrics(SM_CXSCREEN) - boundingRect.Width - COsd::edgePadding;
+
+		SetWindowPos(m_hWnd, NULL, x, y, boundingRect.Width, boundingRect.Height, SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
+		DeleteDC(hDC);
+	}
+
+/********************************************************************
+* ShowOSD                                                           *
+*                                                                   *
+* Takes broam text or toolbar label and saves it to be painted when *
+* we invalidate the rect in PositionWindow ;)                       *
+********************************************************************/
 	void ShowOSD(char* text, int time=0){
-		strncpy(m_strText, text, 128);
-		m_strText[128-1] = 0;
-		ShowWindow(m_hWnd, SW_SHOW);
-		InvalidateRect(m_hWnd, NULL, TRUE);
+		if (m_strText != NULL)
+			delete[] m_strText;
+
+		m_strText = new char[lstrlen(text) + 1];
+		strcpy(m_strText, text);
+
+		PositionWindow();
 		SetTimer(m_hWnd, 1, time?time:timeout, NULL);
 	}
 
@@ -119,7 +179,7 @@ private:
 
 	LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lParam)
 	{
-		static int msgs[] = { BB_SETTOOLBARLABEL, BB_BROADCAST, 0 };
+		static int msgs[] = { BB_SETTOOLBARLABEL, BB_BROADCAST, BB_RECONFIGURE, 0 };
 		switch(uMessage)
 		{
 		case WM_CREATE:
@@ -131,7 +191,7 @@ private:
 			break;
 
 		case WM_PAINT:
-			if(!m_strText[0])
+			if(m_strText == NULL)
 				return DefWindowProc(hWnd, uMessage, wParam, lParam);
 
 			OnPaint();
@@ -144,12 +204,18 @@ private:
 				KillTimer(hWnd, 1);
 			}
 			break;
+
 		case BB_SETTOOLBARLABEL:
 			if (bShowLabel)
 				ShowOSD((char*)lParam);
 			break;
+
 		case BB_BROADCAST:
 			InterpretBroam((char *)lParam);
+			break;
+
+		case BB_RECONFIGURE:
+			::LoadConfig();
 			break;
 
 		default:
@@ -165,10 +231,12 @@ private:
 		HDC hDC = BeginPaint(m_hWnd, &ps);
 		SetBkMode(hDC, TRANSPARENT);
 		SelectObject(hDC, m_hFont);
+
+		int length = lstrlen(m_strText);
+
 		RECT rc;
 		GetClientRect(m_hWnd, &rc);
-		rc.left += 10;
-		rc.top += 10;
+
 		SetTextColor(hDC, clrOutline);
 		//
 		rc.left -= 1;
@@ -187,44 +255,28 @@ private:
 		rc.top += 1;
 		SetTextColor(hDC, clrOSD);
 		DrawText(hDC, m_strText, lstrlen(m_strText), &rc, DT_LEFT);
+
 		EndPaint(m_hWnd, &ps);
 	}
 	
 private:
 	HWND			m_hWnd;
 	HFONT			m_hFont;
-	char			m_strText[128];
+	char*			m_strText;
 	HINSTANCE m_hInstance;
 };
 
 COLORREF COsd::clrOutline=0x010101;
 COLORREF COsd::clrOSD=0xffffff;
 DWORD    COsd::fontSize=75;
+DWORD	 COsd::edgePadding=10;
 DWORD    COsd::timeout=3000;
 bool     COsd::bShowLabel=true;
+ULONG_PTR COsd::ulGdiplusToken = NULL;
+char	 COsd::sPosition[]="topleft";
 
 
 COsd *osd;
-
-int axtoi(char *hexStr) {
-  int res = 0;  // integer value of hex string
-  for(char* p=hexStr; *p; p++){
-     if (*p >= '0' && *p<='9' ) res = res*16 + (*p-'0');
-     else
-     if (*p >= 'a' && *p<='f' ) res = res*16 + (*p-'a'+10);
-     else
-     if (*p >= 'A' && *p<='F' ) res = res*16 + (*p-'A'+10);
-     else
-     break;
-  }
-  return (res);
-}
-
-char* skipwhitespace(char* text){
-	char *p=text;
-	while(*p==' ' || *p=='\t')p++;
-	return p;
-}
 
 void LoadConfig()
 {
@@ -243,20 +295,22 @@ void LoadConfig()
 		GetBlackboxPath(rcpath, sizeof(rcpath));
 	}
 
+	COsd::edgePadding = ReadInt(rcpath, "BBOSD.edgePadding:", COsd::edgePadding);
 	COsd::fontSize = ReadInt(rcpath, "BBOSD.fontHeight:", COsd::fontSize);
 	COsd::timeout = ReadInt(rcpath, "BBOSD.timeout:", COsd::timeout);
 	COsd::clrOSD = ReadColor(rcpath, "BBOSD.clrOSD:", "#ffffff");
 	COsd::clrOutline = ReadColor(rcpath, "BBOSD.clrOutline:", "#010101");
 	COsd::bShowLabel = ReadBool(rcpath, "BBOSD.showLabel:", COsd::bShowLabel);
+	strcpy(COsd::sPosition, ReadString(rcpath, "BBOSD.position:", COsd::sPosition));
 }
 
 
 
-const char szVersion     [] = "bbOSD 1.2";
+const char szVersion     [] = "bbOSD 1.4.2";
 const char szAppName     [] = "bbOSD";
-const char szInfoVersion [] = "1.2";
+const char szInfoVersion [] = "1.4.2";
 const char szInfoAuthor  [] = "alex3d/Tres`ni";
-const char szInfoRelDate [] = "10 Mar 2007";
+const char szInfoRelDate [] = "12 Apr 2007";
 const char szInfoEmail   [] = "AlexThreeD@users.sourceforge.net/tresni@crackmonkey.us";
 
 //===========================================================================
@@ -283,14 +337,19 @@ LPCSTR pluginInfo(int field)
 			return szInfoRelDate;
 		case PLUGIN_EMAIL:
 			return szInfoEmail;
+#if _DEBUG
 		case PLUGIN_BROAMS:
-			return "\003@BBOSD Test@BBOsd Test2 20000\0@BBOSD Test\0\0";
+			return "@BBOSD abcdefghijklmnopqrstuvwxyz";
+#endif
 	}
 }
 
 
 int beginPlugin(HINSTANCE hPluginInstance)
 {
+	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+	Gdiplus::GdiplusStartup(&COsd::ulGdiplusToken, &gdiplusStartupInput, NULL);
+
 	pSetLayeredWindowAttributes=0;
 	hUser32=LoadLibraryA("user32.dll");
 	if (hUser32) {
@@ -327,6 +386,7 @@ int beginPlugin(HINSTANCE hPluginInstance)
 void endPlugin(HINSTANCE hPluginInstance)
 {
 	delete osd;
+	Gdiplus::GdiplusShutdown(COsd::ulGdiplusToken);
 }
 
 
