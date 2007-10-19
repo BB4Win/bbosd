@@ -2,7 +2,7 @@
   Copyright © 2005 Alex3D
 */
 #include "BBApi.h"
-#include "m_alloc.h"
+//#include "m_alloc.h"
 
 
 //===========================================================================
@@ -18,10 +18,12 @@ HINSTANCE hUser32;
 class COsd
 {
 public:
-	static DWORD clrOutline;
-	static DWORD clrOSD;
-	static DWORD fontSize;
-	static DWORD timeout;
+	static COLORREF clrOutline;
+	static COLORREF clrOSD;
+	static DWORD    fontSize;
+	static DWORD    timeout;
+	static bool     bShowLabel;
+
 	COsd() {
 		m_hFont = NULL;
 		m_hWnd = NULL;
@@ -79,9 +81,30 @@ public:
 	
 	void ShowOSD(char* text, int time=0){
 		strncpy(m_strText, text, 128);
+		m_strText[128-1] = 0;
 		ShowWindow(m_hWnd, SW_SHOW);
 		InvalidateRect(m_hWnd, NULL, TRUE);
 		SetTimer(m_hWnd, 1, time?time:timeout, NULL);
+	}
+
+	void InterpretBroam(char *b)
+	{
+		char *broam = new char[strlen(b) + 1];
+		strcpy(broam,b);
+
+		if (!_strnicmp(broam, "@BBOSD ", 7))
+		{
+			size_t len = lstrlen(broam) + 1;
+			char *drop = new char[len];
+			char *osd = new char[len];
+			char *timeout = new char[len];
+			char *tokens[2] = { drop, osd };
+
+			drop[0] = osd[0] = timeout[0] = 0;
+			int toks = BBTokenize(broam, tokens, 2, timeout);
+
+			ShowOSD(osd, atoi(timeout));
+		}
 	}
 
 private:
@@ -96,7 +119,7 @@ private:
 
 	LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lParam)
 	{
-		static int msgs[] = { BB_SETTOOLBARLABEL, 0 };
+		static int msgs[] = { BB_SETTOOLBARLABEL, BB_BROADCAST, 0 };
 		switch(uMessage)
 		{
 		case WM_CREATE:
@@ -122,7 +145,11 @@ private:
 			}
 			break;
 		case BB_SETTOOLBARLABEL:
-			ShowOSD((char*)lParam);
+			if (bShowLabel)
+				ShowOSD((char*)lParam);
+			break;
+		case BB_BROADCAST:
+			InterpretBroam((char *)lParam);
 			break;
 
 		default:
@@ -146,20 +173,20 @@ private:
 		//
 		rc.left -= 1;
 		rc.top -= 1;
-		DrawText(hDC, m_strText, strlen(m_strText), &rc, DT_LEFT);
+		DrawText(hDC, m_strText, lstrlen(m_strText), &rc, DT_LEFT);
 		rc.left += 2;
 		rc.top += 2;
-		DrawText(hDC, m_strText, strlen(m_strText), &rc, DT_LEFT);
+		DrawText(hDC, m_strText, lstrlen(m_strText), &rc, DT_LEFT);
 		rc.left -= 2;
-		DrawText(hDC, m_strText, strlen(m_strText), &rc, DT_LEFT);
+		DrawText(hDC, m_strText, lstrlen(m_strText), &rc, DT_LEFT);
 		rc.left += 2;
 		rc.top -= 2;
-		DrawText(hDC, m_strText, strlen(m_strText), &rc, DT_LEFT);
+		DrawText(hDC, m_strText, lstrlen(m_strText), &rc, DT_LEFT);
 		//
 		rc.left -= 1;
 		rc.top += 1;
 		SetTextColor(hDC, clrOSD);
-		DrawText(hDC, m_strText, strlen(m_strText), &rc, DT_LEFT);
+		DrawText(hDC, m_strText, lstrlen(m_strText), &rc, DT_LEFT);
 		EndPaint(m_hWnd, &ps);
 	}
 	
@@ -170,10 +197,11 @@ private:
 	HINSTANCE m_hInstance;
 };
 
-DWORD COsd::clrOutline=0x010101;
-DWORD COsd::clrOSD=0xffffff;
-DWORD COsd::fontSize=75;
-DWORD COsd::timeout=3000;
+COLORREF COsd::clrOutline=0x010101;
+COLORREF COsd::clrOSD=0xffffff;
+DWORD    COsd::fontSize=75;
+DWORD    COsd::timeout=3000;
+bool     COsd::bShowLabel=true;
 
 
 COsd *osd;
@@ -204,7 +232,7 @@ void LoadConfig()
 	GetModuleFileName(m_hMainInstance, rcpath, sizeof(rcpath));
 	for (i=0;;)
 	{
-		int nLen = strlen(rcpath);
+		int nLen = lstrlen(rcpath);
 		while (nLen && rcpath[nLen-1] != '\\') nLen--;
 		strcpy(rcpath+nLen, "bbosdrc");  if (FileExists(rcpath)) break;
 		strcpy(rcpath+nLen, "bbosd.rc"); if (FileExists(rcpath)) break;
@@ -215,34 +243,21 @@ void LoadConfig()
 		GetBlackboxPath(rcpath, sizeof(rcpath));
 	}
 
-	char buffer[1024];
-	FILE *fp = FileOpen(rcpath);
-	while (ReadNextCommand(fp, buffer, sizeof (buffer))){
-		if(!memicmp(buffer,"BBOSD.fontHeight ", 17)){
-			COsd::fontSize = atoi(buffer+17);
-		}else
-		if(!memicmp(buffer,"BBOSD.timeout ", 14)){
-			COsd::timeout = atoi(skipwhitespace(buffer+14));
-		}
-		if(!memicmp(buffer,"BBOSD.clrOSD ", 13)){
-			COsd::clrOSD = axtoi(skipwhitespace(buffer+13));
-		}else
-		if(!memicmp(buffer,"BBOSD.clrOutline ", 17)){
-			COsd::clrOutline = axtoi(skipwhitespace(buffer+17));
-		}
-	}
-	FileClose(fp);
+	COsd::fontSize = ReadInt(rcpath, "BBOSD.fontHeight:", COsd::fontSize);
+	COsd::timeout = ReadInt(rcpath, "BBOSD.timeout:", COsd::timeout);
+	COsd::clrOSD = ReadColor(rcpath, "BBOSD.clrOSD:", "#ffffff");
+	COsd::clrOutline = ReadColor(rcpath, "BBOSD.clrOutline:", "#010101");
+	COsd::bShowLabel = ReadBool(rcpath, "BBOSD.showLabel:", COsd::bShowLabel);
 }
 
 
 
-const char szVersion     [] = "bbOSD 1.0";
+const char szVersion     [] = "bbOSD 1.2";
 const char szAppName     [] = "bbOSD";
-const char szInfoVersion [] = "1.0";
-const char szInfoAuthor  [] = "alex3d";
-const char szInfoRelDate [] = "19/06/2005";
-const char szInfoLink    [] = "...";
-const char szInfoEmail   [] = "AlexThreeD@users.sourceforge.net";
+const char szInfoVersion [] = "1.2";
+const char szInfoAuthor  [] = "alex3d/Tres`ni";
+const char szInfoRelDate [] = "10 Mar 2007";
+const char szInfoEmail   [] = "AlexThreeD@users.sourceforge.net/tresni@crackmonkey.us";
 
 //===========================================================================
 extern "C"
@@ -257,13 +272,19 @@ LPCSTR pluginInfo(int field)
 	switch (field)
 	{
 		default:
-		case 0: return szVersion;
-		case 1: return szAppName;
-		case 2: return szInfoVersion;
-		case 3: return szInfoAuthor;
-		case 4: return szInfoRelDate;
-		case 5: return szInfoLink;
-		case 6: return szInfoEmail;
+			return szVersion;
+		case PLUGIN_NAME:
+			return szAppName;
+		case PLUGIN_VERSION:
+			return szInfoVersion;
+		case PLUGIN_AUTHOR:
+			return szInfoAuthor;
+		case PLUGIN_RELEASEDATE:
+			return szInfoRelDate;
+		case PLUGIN_EMAIL:
+			return szInfoEmail;
+		case PLUGIN_BROAMS:
+			return "\003@BBOSD Test@BBOsd Test2 20000\0@BBOSD Test\0\0";
 	}
 }
 
