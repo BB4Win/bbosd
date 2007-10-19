@@ -29,11 +29,18 @@ public:
 	static bool     bShowLabel;
 	static ULONG_PTR ulGdiplusToken;
 	static char		sPosition[MAX_LINE_LENGTH];
+	HDC		m_hMemDC;
+	HFONT	m_hOldFont;
+	Gdiplus::Graphics *m_Graphics;
+	//Gdiplus::FontFamily *m_FontFam;
+	Gdiplus::Font *m_Font;
 
 	COsd() {
 		m_hFont = NULL;
 		m_hWnd = NULL;
 		m_strText = NULL;
+		m_hMemDC = NULL;
+		m_hOldFont = NULL;
 	}
 
 	~COsd() {
@@ -48,13 +55,17 @@ public:
 	BOOL Initialize(HINSTANCE hInstance)
 	{
 		m_hInstance = hInstance;
-		HDC hDC = GetDC(NULL);
-		int nHeight = fontSize*GetDeviceCaps(hDC, LOGPIXELSY)/100;
-		ReleaseDC(NULL, hDC);
+		/*HDC*/ m_hMemDC = GetDC(NULL);
+		int nHeight = fontSize*GetDeviceCaps(m_hMemDC, LOGPIXELSY)/100;
+		//ReleaseDC(NULL, hDC);
 		
-		m_hFont = CreateFont(nHeight, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, NONANTIALIASED_QUALITY, DEFAULT_PITCH, "Verdana");
+		HFONT m_hFont = CreateFont(nHeight, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, NONANTIALIASED_QUALITY, DEFAULT_PITCH, "Verdana");
 		if(!m_hFont)
 			return FALSE;
+		
+		Gdiplus::FontFamily family(L"Verdana");
+		m_Font = new Gdiplus::Font(&family, fontSize);
+		m_Graphics = new Gdiplus::Graphics(m_hMemDC);
 
 		char* class_name = "osd_window";
 		WNDCLASSEX wcl = {NULL};
@@ -198,7 +209,7 @@ private:
 			break;
 
 		case WM_DESTROY:
-			//PostQuitMessage(0);
+			SendMessage(BBhwnd, BB_UNREGISTERMESSAGE, (WPARAM)hWnd, (LPARAM)msgs);
 			break;
 
 		case WM_PAINT:
