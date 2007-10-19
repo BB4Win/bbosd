@@ -1,8 +1,20 @@
 /*
   Copyright © 2005 Alex3D
 */
+
+// I think I'm coding in circles at this point.  Need to use a Gdiplus::Bitmap
+// if I want to Bitblt, but might as well usa Gdiplus::Graphics + Gdiplus::CachedBitmap
+// at this point.  Really need to restructor everything though.  Instead of a small windw
+// I think I need to make the window the size of the monitor.  This way I have a fixed bitmap
+// in memory.  Then use transparency (fill with RGB(0,0,0)) a drawing to the bitmap where the
+// string needs to be placed.  Little more work, but I think it's the only way to do it.
+// Everything would be drawn in PositionWindow then, OnPaint() would merely copy the Bitmap
+// to the HDC.
+// Really need to rewrite this to make this work better...
+
 #include "BBApi.h"
 #include <gdiplus.h>
+
 //#include "m_alloc.h"
 
 //===========================================================================
@@ -31,12 +43,11 @@ public:
 	static char		sPosition[MAX_LINE_LENGTH];
 	HDC		m_hMemDC;
 	HFONT	m_hOldFont;
+	Gdiplus::Bitmap *m_MemBitmap;
 	Gdiplus::Graphics *m_Graphics;
-	//Gdiplus::FontFamily *m_FontFam;
 	Gdiplus::Font *m_Font;
 
 	COsd() {
-		m_hFont = NULL;
 		m_hWnd = NULL;
 		m_strText = NULL;
 		m_hMemDC = NULL;
@@ -46,8 +57,6 @@ public:
 	~COsd() {
 		DestroyWindow(m_hWnd);
 		UnregisterClass("osd_window", m_hInstance);
-		if(m_hFont)
-			DeleteObject(m_hFont);
 		if (m_strText)
 			delete[] m_strText;
 	}
@@ -55,17 +64,11 @@ public:
 	BOOL Initialize(HINSTANCE hInstance)
 	{
 		m_hInstance = hInstance;
-		/*HDC*/ m_hMemDC = GetDC(NULL);
-		int nHeight = fontSize*GetDeviceCaps(m_hMemDC, LOGPIXELSY)/100;
-		//ReleaseDC(NULL, hDC);
-		
-		HFONT m_hFont = CreateFont(nHeight, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, NONANTIALIASED_QUALITY, DEFAULT_PITCH, "Verdana");
-		if(!m_hFont)
-			return FALSE;
-		
+
+		m_MemBitmap = new Gdiplus::Bitmap(800, 600);
 		Gdiplus::FontFamily family(L"Verdana");
 		m_Font = new Gdiplus::Font(&family, fontSize);
-		m_Graphics = new Gdiplus::Graphics(m_hMemDC);
+		m_Graphics = Gdiplus::Graphics::FromImage(m_MemBitmap);
 
 		char* class_name = "osd_window";
 		WNDCLASSEX wcl = {NULL};
@@ -88,7 +91,7 @@ public:
 		m_hWnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_TRANSPARENT,
 			 class_name, NULL, 
 			WS_VISIBLE | WS_POPUP, 
-			0, 0, 800, nHeight+30, 
+			0, 0, GetSystemMetrics(SM_CYSCREEN), GetSystemMetrics(SM_CXSCREEN), 
 			hWndDesktop, NULL, 
 			hInstance, this);
 
@@ -110,21 +113,28 @@ public:
 *********************************************************************/
 	void PositionWindow()
 	{
-		HDC hDC = CreateCompatibleDC(NULL);
-		Gdiplus::Graphics g(hDC);
 		Gdiplus::RectF boundingRect;
 		Gdiplus::RectF layoutRect;
-		Gdiplus::Font font(hDC, m_hFont);
 		int length = lstrlen(m_strText);
 
 		WCHAR *wstring = new WCHAR[length + 1];
 
-		Gdiplus::REAL size = font.GetHeight(&g);
+		Gdiplus::REAL size = m_Font->GetHeight(m_Graphics);
 
 		MultiByteToWideChar(CP_ACP, 0, m_strText, -1, wstring, length + 1);
 
-		g.MeasureString(wstring, length, &font, layoutRect, &boundingRect);
+		m_Graphics->MeasureString(wstring, -1, m_Font, layoutRect, &boundingRect);
 		delete[] wstring;
+
+		if (m_MemBitmap)
+			delete m_MemBitmap;
+
+		if (m_Graphics)
+			delete m_Graphics;
+
+		m_MemBitmap = new Gdiplus::Bitmap(boundingRect.Width, boundingRect.Height);
+		m_Graphics = Gdiplus::Graphics::FromImage(m_MemBitmap);
+		
 
 		int x = COsd::edgePadding;
 		int y = COsd::edgePadding;
@@ -144,8 +154,6 @@ public:
 		SetWindowPos(m_hWnd, NULL, x, y, boundingRect.Width, boundingRect.Height, SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
 		InvalidateRect(m_hWnd, NULL, TRUE);
 #pragma warning(default: 4244)
-
-		DeleteDC(hDC);
 	}
 
 /********************************************************************
@@ -250,14 +258,35 @@ private:
 	void OnPaint()
 	{
 		PAINTSTRUCT ps = {NULL};
-		HDC hDC = BeginPaint(m_hWnd, &ps);
-		SetBkMode(hDC, TRANSPARENT);
-		SelectObject(hDC, m_hFont);
-
 		int length = lstrlen(m_strText);
 
 		RECT rc;
 		GetClientRect(m_hWnd, &rc);
+
+		m_Graphics->Clear(Gdiplus::Color::Transparent);
+		Gdiplus::SolidBrush brush(Gdiplus::Color(GetRValue(clrOutline), GetGValue(clrOutline), GetBValue(clrOutline)));
+
+		WCHAR *wstring = new WCHAR[length + 1];	
+		MultiByteToWideChar(CP_ACP, 0, m_strText, -1, wstring, length + 1);
+
+		m_Graphics->DrawString(wstring, -1, m_Font, Gdiplus::RectF(rc.left -1, rc.top -1, rc.right, rc.bottom), NULL, &brush);
+		m_Graphics->DrawString(wstring, -1, m_Font, Gdiplus::RectF(rc.left +2, rc.top +2, rc.right, rc.bottom), NULL, &brush);
+		m_Graphics->DrawString(wstring, -1, m_Font, Gdiplus::RectF(rc.left -2, rc.top, rc.right, rc.bottom), NULL, &brush);
+		m_Graphics->DrawString(wstring, -1, m_Font, Gdiplus::RectF(rc.left +2, rc.top -2, rc.right, rc.bottom), NULL, &brush);
+
+		brush.SetColor(Gdiplus::Color(GetRValue(clrOSD), GetGValue(clrOSD), GetBValue(clrOSD)));
+		m_Graphics->DrawString(wstring, -1, m_Font, Gdiplus::RectF(rc.left, rc.top, rc.right, rc.bottom), NULL, &brush);
+
+		delete[] wstring;
+
+		HDC hDC = BeginPaint(m_hWnd, &ps);
+
+		BitBlt(hDC, rc.left, rc.top, rc.right, rc.bottom, m_Graphics->GetHDC(), rc.left, rc.top, SRCCOPY);
+/*
+		SetBkMode(hDC, TRANSPARENT);
+		SelectObject(hDC, m_hFont);
+
+		
 
 		SetTextColor(hDC, clrOutline);
 		//
@@ -277,13 +306,12 @@ private:
 		rc.top += 1;
 		SetTextColor(hDC, clrOSD);
 		DrawText(hDC, m_strText, length, &rc, DT_LEFT);
-
+*/
 		EndPaint(m_hWnd, &ps);
 	}
 	
 private:
 	HWND			m_hWnd;
-	HFONT			m_hFont;
 	char*			m_strText;
 	HINSTANCE		m_hInstance;
 };
