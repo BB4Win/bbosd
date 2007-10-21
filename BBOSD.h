@@ -1,7 +1,4 @@
 #include "BBPlugin.h"
-//#include <gdiplus.h>
-
-//using namespace Gdiplus;
 
 #define POSITION_TOP	0x0001
 #define POSITION_MIDDLE	0x0002
@@ -79,7 +76,7 @@ public:
 		ZeroMemory(setting, MAX_LINE_LENGTH);
 
 		m_bShowToolbarLabel = ReadBool(rcpath, "bbOSD.ShowLabel:", true);
-		bool bVoodooMath = ReadBool(rcpath, "bbOSD.Voodoo:", false);
+		bool bVoodooMath = ReadBool(rcpath, "bbOSD.VoodooMath:", false);
 		m_nEdgePadding = ReadInt(rcpath, "bbOSD.EdgePadding:", 10);
 		m_nTimeout = ReadInt(rcpath, "bbOSD.Timeout:", 30000);
 		m_cFontColor = ReadColor(rcpath, "bbosd.ClrOSD:", "#FFFFFF");
