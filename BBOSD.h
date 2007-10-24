@@ -58,6 +58,12 @@ public:
 		delete[] m_szOsdText;
 	}
 
+	void Destroy()
+	{
+		KillTimer(m_hWindow, 1);
+		_DestroyWindow();
+	}
+
 	int Initialize()
 	{
 		_RegisterClass();
@@ -157,7 +163,7 @@ public:
 	void InitializeImages()
 	{
 		m_hMemDC = CreateCompatibleDC(NULL);
-		m_hMemBitmap = CreateCompatibleBitmap(m_hMemDC, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+		m_hMemBitmap = CreateBitmap(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), 1, 32, NULL);
 		m_hMemBitmap = (HBITMAP)SelectObject(m_hMemDC, m_hMemBitmap);
 	}
 

@@ -53,6 +53,7 @@ extern "C" {
 
 	DLL_EXPORT void endPlugin(HINSTANCE hInstance)
 	{
+		BBOSD->Destroy();
 		delete BBOSD;
 	}
 

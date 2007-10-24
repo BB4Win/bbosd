@@ -62,10 +62,6 @@ public:
 
 	~CBBPlugin()
 	{
-		if (m_hWindow)
-			DestroyWindow(m_hWindow);
-
-		UnregisterClass(szClassName, m_hInstance);
 	}
 
 	BOOL _RegisterClass()
@@ -101,6 +97,14 @@ public:
 		return FALSE;
 	}
 
+	void _DestroyWindow()
+	{
+		if (m_hWindow)
+			DestroyWindow(m_hWindow);
+
+		UnregisterClass(szClassName, m_hInstance);
+	}
+
 	BOOL AddToSlit()
 	{
 		if (!m_hParentWindow)
@@ -125,14 +129,14 @@ private:
 		else if (uMessage == WM_CREATE)
 			SendMessage(GetBBWnd(), BB_REGISTERMESSAGE, (WPARAM)hWnd, (LPARAM)nMessages);
 		else if (uMessage == WM_DESTROY)
-		{
 			SendMessage(GetBBWnd(), BB_UNREGISTERMESSAGE, (WPARAM)hWnd, (LPARAM)nMessages);
-			return TRUE;
-		}
 		else if (uMessage == WM_NCDESTROY)
-			return TRUE;
+			pThis = NULL;
 
-		return pThis->WindowProc(hWnd, uMessage, wParam, lParam);
+		if (pThis != NULL)
+			return pThis->WindowProc(hWnd, uMessage, wParam, lParam);
+		else
+			return DefWindowProc(hWnd, uMessage, wParam, lParam);
 	}
 
 	virtual LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lParam) = 0;
