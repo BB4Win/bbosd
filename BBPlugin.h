@@ -31,8 +31,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef __BBPLUGIN_H__
 #define __BBPLUGIN_H__
-#include "BBApi.h"
 
+#ifndef WS_EX_LAYERED
+# define WS_EX_LAYERED		0x00080000
+# define LWA_COLORKEY		0x00000001
+# define LWA_ALPHA			0x00000002
+#endif
+
+#include "BBApi.h"
 class CBBPlugin
 {
 private:
